@@ -153,7 +153,7 @@ genStreamBody inputMap body = case body of
     (MapMany values) -> do
         mapM (genExpression inputMap False) values
     (Fold expression startValue) -> do
-        (Value cStartValue cTypeStartValue _ Nothing) <-
+        ~(Value cStartValue cTypeStartValue _ Nothing) <-
             genExpression inputMap True startValue
         header $ concat [ "static "
                         , cTypeStr cTypeStartValue
@@ -161,25 +161,25 @@ genStreamBody inputMap body = case body of
                         , cStartValue
                         , ";"
                         ]
-        (Value cExpression cType _ Nothing) <-
+        ~(Value cExpression cType _ Nothing) <-
             let inputMapWithStartState = M.insert 1 cTypeStartValue inputMap
             in genExpression inputMapWithStartState False expression
         genCopy "input_1" cExpression cTypeStartValue
         fmap (:[]) $ variable "input_1" cType
     (Filter condition) -> do
-        (Value cCondition CBit _ Nothing) <-
+        ~(Value cCondition CBit _ Nothing) <-
             genExpression inputMap False condition
-        (Value cValue cType _ Nothing) <-
+        ~(Value cValue cType _ Nothing) <-
             genExpression inputMap False (Input 0)
         return [FilterVariable cValue cType cCondition]
     (DelayMicroseconds delay expression) -> do
-        (Value cDelay CWord _ Nothing) <-
+        ~(Value cDelay CWord _ Nothing) <-
             genExpression inputMap False delay
-        (Value cExpression cType storage Nothing) <-
+        ~(Value cExpression cType storage Nothing) <-
             genExpression inputMap False expression
         return [Value cExpression cType storage (Just cDelay)]
     (Flatten expression) -> do
-        (Value cExpression (CList cTypeItem) _ Nothing) <-
+        ~(Value cExpression (CList cTypeItem) _ Nothing) <-
             genExpression inputMap False expression
         return [ToFlatVariable cExpression cTypeItem]
     (Driver _ _ bodyLLI) -> do
@@ -192,28 +192,28 @@ genStreamBody inputMap body = case body of
 genExpression :: M.Map Int CType -> Bool -> Expression -> Gen ResultValue
 genExpression inputMap static expression = case expression of
     (Not operand) -> do
-        (Value cOperand CBit _ Nothing) <-
+        ~(Value cOperand CBit _ Nothing) <-
             genExpression inputMap static operand
         literal CBit $ "!(" ++ cOperand ++ ")"
     (Even operand) -> do
-        (Value cOperand CWord _ Nothing) <-
+        ~(Value cOperand CWord _ Nothing) <-
             genExpression inputMap static operand
         literal CBit $ "(" ++ cOperand ++ ") % 2 == 0"
     (Greater left right) -> do
-        (Value cLeft  CWord _ Nothing) <- genExpression inputMap static left
-        (Value cRight CWord _ Nothing) <- genExpression inputMap static right
+        ~(Value cLeft  CWord _ Nothing) <- genExpression inputMap static left
+        ~(Value cRight CWord _ Nothing) <- genExpression inputMap static right
         literal CBit $ "(" ++ cLeft ++ " > " ++ cRight ++ ")"
     (Add left right) -> do
-        (Value cLeft  CWord _ Nothing) <- genExpression inputMap static left
-        (Value cRight CWord _ Nothing) <- genExpression inputMap static right
+        ~(Value cLeft  CWord _ Nothing) <- genExpression inputMap static left
+        ~(Value cRight CWord _ Nothing) <- genExpression inputMap static right
         literal CWord $ "(" ++ cLeft ++ " + " ++ cRight ++ ")"
     (Sub left right) -> do
-        (Value cLeft  CWord _ Nothing) <- genExpression inputMap static left
-        (Value cRight CWord _ Nothing) <- genExpression inputMap static right
+        ~(Value cLeft  CWord _ Nothing) <- genExpression inputMap static left
+        ~(Value cRight CWord _ Nothing) <- genExpression inputMap static right
         literal CWord $ "(" ++ cLeft ++ " - " ++ cRight ++ ")"
     (Mul left right) -> do
-        (Value cLeft  CWord _ Nothing) <- genExpression inputMap static left
-        (Value cRight CWord _ Nothing) <- genExpression inputMap static right
+        ~(Value cLeft  CWord _ Nothing) <- genExpression inputMap static left
+        ~(Value cRight CWord _ Nothing) <- genExpression inputMap static right
         literal CWord $ "(" ++ cLeft ++ " * " ++ cRight ++ ")"
     (Input value) -> do
         variable ("input_" ++ show value) (inputMap M.! value)
@@ -240,7 +240,7 @@ genExpression inputMap static expression = case expression of
         line $ temp ++ ".values = (void*)" ++ v ++ ";"
         variable temp (CList $ resultType exprs)
     (TupleValue n tuple) -> do
-        (Value name (CTuple cTypes) _ Nothing) <- genExpression inputMap static tuple
+        ~(Value name (CTuple cTypes) _ Nothing) <- genExpression inputMap static tuple
         let cType = cTypes !! n
         let res = concat [ "*"
                          , "((" ++ cTypeStr cType ++ "*)"
@@ -254,7 +254,7 @@ genExpression inputMap static expression = case expression of
         if static
             then do
                 valueVariables <- forM values $ \value -> do
-                    (Value cExpression cType _ Nothing) <- genExpression inputMap static value
+                    ~(Value cExpression cType _ Nothing) <- genExpression inputMap static value
                     name <- genStaticCVariable (cTypeStr cType) cExpression
                     return $ Value name cType Variable Nothing
                 let res = concat (
@@ -269,14 +269,14 @@ genExpression inputMap static expression = case expression of
                 variable res (CTuple $ map extract valueVariables)
             else do
                 valueVariables <- forM values $ \value -> do
-                    (Value cExpression cType _ _) <- genExpression inputMap static value
+                    ~(Value cExpression cType _ _) <- genExpression inputMap static value
                     wrap cExpression cType
                 name <- genCVariable ("struct tuple" ++ show (length valueVariables))
                 forM_ (zip [0..] valueVariables) $ \(n, (Value x _ _ _)) ->
                     line $ name ++ ".value" ++ show n ++ " = (void*)&" ++ x ++ ";"
                 variable name (CTuple $ map extract valueVariables)
     (NumberToByteArray operand) -> do
-        (Value r CWord _ _) <- genExpression inputMap static operand
+        ~(Value r CWord _ _) <- genExpression inputMap static operand
         charBuf <- label
         header $ cTypeStr CByte ++ " " ++ charBuf ++ "[20];"
         line $ "snprintf(" ++ charBuf ++ ", 20, \"%d\", " ++ r ++ ");"
@@ -287,17 +287,17 @@ genExpression inputMap static expression = case expression of
     (WordConstant value) -> do
         literal CWord $ show value
     (Equal leftExpression rightExpression) -> do
-        (Value cLeft _ _ _) <-
+        ~(Value cLeft _ _ _) <-
             genExpression inputMap static leftExpression
-        (Value cRight _ _ _) <-
+        ~(Value cRight _ _ _) <-
             genExpression inputMap static rightExpression
         literal CBit $ cLeft ++ " == " ++ cRight
     (If conditionExpression trueExpression falseExpression) -> do
-        (Value cCondition CBit _ _) <-
+        ~(Value cCondition CBit _ _) <-
             genExpression inputMap static conditionExpression
-        (Value cTrue cType _ _) <-
+        ~(Value cTrue cType _ _) <-
             genExpression inputMap static trueExpression
-        (Value cFalse cType _ _) <-
+        ~(Value cFalse cType _ _) <-
             genExpression inputMap static falseExpression
         temp <- genCVariable (cTypeStr cType)
         block ("if (" ++ cCondition ++ ") {") $ do
@@ -330,7 +330,7 @@ genLLI lli = case lli of
             ConstBit Low -> do
                 line (register ++ " &= ~(1 << " ++ bit ++ ");")
             _ -> do
-                (Value x cType _ _) <- genLLI value
+                ~(Value x cType _ _) <- genLLI value
                 block ("if (" ++ x ++ ") {") $ do
                     line (register ++ " |= (1 << " ++ bit ++ ");")
                 block "} else {" $ do
@@ -338,11 +338,11 @@ genLLI lli = case lli of
                 line "}"
         genLLI next
     (WriteByte register value next) -> do
-        (Value x cType _ _) <- genLLI value
+        ~(Value x cType _ _) <- genLLI value
         line (register ++ " = " ++ x ++ ";")
         genLLI next
     (WriteWord register value next) -> do
-        (Value x cType _ _) <- genLLI value
+        ~(Value x cType _ _) <- genLLI value
         line (register ++ " = " ++ x ++ ";")
         genLLI next
     (ReadBit register bit) -> do
@@ -387,7 +387,7 @@ genStreamOutputCalling :: [ResultValue] -> Stream -> Gen ()
 genStreamOutputCalling results stream = do
     wrappedResults <- forM results $ \result -> case result of
         (Value name cType Literal delay) -> do
-            (Value wrappedName wrappedCType Variable _) <- wrap name cType
+            ~(Value wrappedName wrappedCType Variable _) <- wrap name cType
             return $ Value wrappedName wrappedCType Variable delay
         _ -> do
             return result
